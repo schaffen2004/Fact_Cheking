@@ -55,13 +55,16 @@ class PhoBERTClassifier(nn.Module):
         return logits
 
 def load_data(type):
-    splits = {'train': 'data/train-00000-of-00001.parquet', 'dev': 'data/dev-00000-of-00001.parquet', 'test': 'data/test-00000-of-00001.parquet'}
-    train = pd.read_parquet("hf://datasets/tranthaihoa/vifactcheck/" + splits[type])
-    X1 = train['Statement']
-    X2 = train['Context']
-    X3 = train['Evidence'].str.len()
+    import pandas as pd
+
+# Login using e.g. `huggingface-cli login` to access this dataset
+    splits = {'train': 'train.csv', 'validation': 'dev.csv', 'test': 'test.csv'}
+    df = pd.read_csv("hf://datasets/schaffen49/ViFactCheck_Combine/" + splits["train"])
+    X1 = df['Statement']
+    X2 = df['Context']
+    X3 = df['len_evidence']
     X = [(x1, x2, x3) for x1, x2, x3 in zip(X1, X2, X3)]
-    y = list(train['labels'])
+    y = list(df['labels'])
     return X, y
 
 def prepare_datasets(X_train,y_train,X_test,y_test,X_dev,y_dev, tokenizer, max_length):
