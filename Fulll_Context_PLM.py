@@ -2,7 +2,7 @@ import torch
 import pandas as pd
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, AutoModelForMaskedLM
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 from tqdm import tqdm
@@ -37,15 +37,15 @@ class SentencePairDataset(Dataset):
             "label": torch.tensor(label, dtype=torch.long),
         }
 
-class PhoBERTClassifier(nn.Module):
-    def __init__(self, phobert, num_classes):
-        super(PhoBERTClassifier, self).__init__()
-        self.phobert = phobert
+class Classifier(nn.Module):
+    def __init__(self, model, num_classes):
+        super(Classifier, self).__init__()
+        self.model = model
         self.dropout = nn.Dropout(0.3)
-        self.linear = nn.Linear(self.phobert.config.hidden_size, num_classes)
+        self.linear = nn.Linear(self.model.config.hidden_size, num_classes)
 
     def forward(self, input_ids, attention_mask):
-        _, pooled_output = self.phobert(
+        _, pooled_output = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             return_dict=False,
@@ -71,6 +71,7 @@ def prepare_datasets(X_train,y_train,X_test,y_test,X_dev,y_dev, tokenizer, max_l
     test_dataset = SentencePairDataset(X_test, y_test, tokenizer, max_length)
 
     return train_dataset, dev_dataset, test_dataset
+
 
 def train(model, train_loader, dev_loader, criterion, optimizer, device, epochs):
     for epoch in range(epochs):
@@ -101,7 +102,28 @@ def train(model, train_loader, dev_loader, criterion, optimizer, device, epochs)
                 true_labels.extend(labels.cpu().numpy().tolist())
 
         print(f"Epoch {epoch+1}/{epochs}")
-        print(classification_report(true_labels, predictions, digits=4))
+        return classification_report(true_labels, predictions, digits=4)
+    
+def evaluate(path, name):
+    tokenizer = AutoTokenizer.from_pretrained(path)
+    pretrained_model = AutoModel.from_pretrained(path)
+
+    # Prepare data
+    train_dataset, dev_dataset, test_dataset = prepare_datasets(X_train,y_train,X_test,y_test,X_dev,y_dev, tokenizer, max_length)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size)
+    dev_loader = DataLoader(dev_dataset, batch_size=batch_size)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    model = Classifier(pretrained_model, num_classes=len(set(y_train))).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.5e-5)
+    title = f"------------------{name}-------------------"
+    history = train(model, train_loader, dev_loader, criterion, optimizer, device, epochs)
+    new_res = title + "\n" + history
+    results.append(new_res)
+    print(new_res)
+
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -109,23 +131,27 @@ if __name__ == '__main__':
 
     max_length = 256
     batch_size = 16
-    # epochs = 10
-    epochs = 1
+    epochs = 10
     
-    tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-large",verbose=False)
-    phobert = AutoModel.from_pretrained("vinai/phobert-large")
-    
+    # Split data
     X_train,y_train = load_data("train")
     X_test,y_test = load_data("test")
     X_dev,y_dev = load_data("validation")
-    train_dataset, dev_dataset, test_dataset = prepare_datasets(X_train,y_train,X_test,y_test,X_dev,y_dev, tokenizer, max_length)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size)
-    dev_loader = DataLoader(dev_dataset, batch_size=batch_size)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    models = {
+        "ViBERT": "FPTAI/vibert-base-cased",
+        "PhoBERT-base": "vinai/phobert-base",
+        "PhoBERT-large": "vinai/phobert-large",
+        "mBERT": "google-bert/bert-base-multilingual-cased",
+        "XLM-R-large": "FacebookAI/xlm-roberta-large",
+        "XLM-R-base": "FacebookAI/xlm-roberta-base",
+    }
 
-    model = PhoBERTClassifier(phobert, num_classes=len(set(y_train))).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.5e-5)
+    results = []
+    for name,model in models.items():
+        evaluate(model, name)
+    print("Training successfully!\n")
+    print("Models evaluation:")
 
-    train(model, train_loader, dev_loader, criterion, optimizer, device, epochs)
+    for i in results:
+        print(i)
