@@ -121,8 +121,9 @@ def evaluate(path, name):
     title = f"------------------{name}-------------------"
     history = train(model, train_loader, dev_loader, criterion, optimizer, device, epochs)
     new_res = title + "\n" + history
-    results.append(new_res)
     print(new_res)
+    return new_res
+    
 
 
 if __name__ == '__main__':
@@ -149,7 +150,8 @@ if __name__ == '__main__':
 
     results = []
     for name,model in models.items():
-        evaluate(model, name)
+        new_res = evaluate(model, name)
+        results.append(new_res)
     print("Training successfully!\n")
     print("Models evaluation:")
 
